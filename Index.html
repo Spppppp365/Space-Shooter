@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Shooter Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+        #game-info {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            font-family: 'Arial', sans-serif;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            width: auto;
+            display: flex;
+            justify-content: space-between;
+            color: white;
+            font-size: 18px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.8);
+        }
+        .info-box {
+            padding: 5px 15px;
+            margin: 0 10px;
+        }
+        #message {
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            color: white;
+            font-family: 'Arial', sans-serif;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            display: none;
+        }
+        #restart-message {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 20px;
+            color: white;
+            font-family: 'Arial', sans-serif;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            display: none;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-info">
+        <div id="score" class="info-box">Score: 0</div>
+        <div id="health" class="info-box">Health: 100</div>
+        <div id="level" class="info-box">Level: 1</div>
+    </div>
+    <div id="message"></div>
+    <div id="restart-message">Press 'R' to Restart</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Game state
+        let spaceship = { x: canvas.width / 2 - 25, y: canvas.height - 100, width: 50, height: 50, speed: 5, dx: 0 };
+        let score = 0;
+        let level = 1;
+        let health = 100;
+        let lasers = [];
+        let enemies = [];
+        let asteroids = [];
+        let powerUps = [];
+        let gameInterval;
+        let gameOver = false;
+
+        // Asset loading
+        const backgroundImg = new Image();
+        backgroundImg.src = 'assets/background.jpg';
+        const spaceshipImg = new Image();
+        spaceshipImg.src = 'assets/spaceship.png';
+        const enemyImg = new Image();
+        enemyImg.src = 'assets/enemy.png';
+        const asteroidImg = new Image();
+        asteroidImg.src = 'assets/asteroid.png';
+        const healthUpImg = new Image();
+        healthUpImg.src = 'assets/health-up.png';
+        const speedUpImg = new Image();
+        speedUpImg.src = 'assets/speed-up.png';
+        const shieldUpImg = new Image();
+        shieldUpImg.src = 'assets/shield-up.png';
+        const doublePointsImg = new Image();
+        doublePointsImg.src = 'assets/double-points.png';
+
+        // Sound effects
+        const shootSound = new Audio('assets/shoot.wav');
+        const explosionSound = new Audio('assets/explosion.wav');
+
+        // Message function
+        function showMessage(message) {
+            const msgElement = document.getElementById('message');
+            msgElement.textContent = message;
+            msgElement.style.display = 'block';
+            setTimeout(() => msgElement.style.display = 'none', 2000);
+        }
+
+        // Draw spaceship
+        function drawSpaceship() {
+            ctx.drawImage(spaceshipImg, spaceship.x, spaceship.y, spaceship.width, spaceship.height);
+        }
+
+        // Draw lasers
+        function drawLasers() {
+            lasers.forEach(laser => {
+                ctx.beginPath();
+                ctx.arc(laser.x, laser.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = 'red';
+                ctx.fill();
+                ctx.closePath();
+            });
+        }
+
+        // Draw enemies
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.width, enemy.height);
+            });
+        }
+
+        // Draw asteroids
+        function drawAsteroids() {
+            asteroids.forEach(asteroid => {
+                ctx.drawImage(asteroidImg, asteroid.x, asteroid.y, asteroid.width, asteroid.height);
+            });
+        }
+
+        // Draw power-ups
+        function drawPowerUps() {
+            powerUps.forEach(powerUp => {
+                ctx.drawImage(powerUp.image, powerUp.x, powerUp.y, powerUp.width, powerUp.height);
+            });
+        }
+
+        // Draw UI
+        function drawUI() {
+            document.getElementById('score').textContent = `Score: ${score}`;
+            document.getElementById('health').textContent = `Health: ${health}`;
+            document.getElementById('level').textContent = `Level: ${level}`;
+        }
+
+        // Move spaceship
+        function moveSpaceship() {
+            spaceship.x += spaceship.dx;
+            if (spaceship.x < 0) spaceship.x = 0;
+            if (spaceship.x > canvas.width - spaceship.width) spaceship.x = canvas.width - spaceship.width;
+        }
+
+        // Laser movement
+        function moveLasers() {
+            lasers.forEach((laser, index) => {
+                laser.y -= 5;
+                if (laser.y < 0) lasers.splice(index, 1);
+            });
+        }
+
+        // Enemy movement
+        function moveEnemies() {
+            enemies.forEach((enemy, index) => {
+                enemy.y += 3 + level / 5; // Increase speed as level progresses
+                if (enemy.y > canvas.height) {
+                    enemies.splice(index, 1);
+                    health -= 10; // Reduce health when enemy reaches the bottom
+                }
+            });
+        }
+
+        // Asteroid movement
+        function moveAsteroids() {
+            asteroids.forEach((asteroid, index) => {
+                asteroid.y += 4 + level / 10; // Increase speed as level progresses
+                if (asteroid.y > canvas.height) {
+                    asteroids.splice(index, 1);
+                    health -= 15; // Reduce health when asteroid hits the bottom
+                }
+            });
+        }
+
+        // Power-up movement
+        function movePowerUps() {
+            powerUps.forEach((powerUp, index) => {
+                powerUp.y += 3;
+                if (powerUp.y > canvas.height) {
+                    powerUps.splice(index, 1);
+                }
+            });
+        }
+
+        // Power-up collision detection
+        function detectPowerUpCollisions() {
+            powerUps.forEach((powerUp, index) => {
+                if (spaceship.x < powerUp.x + powerUp.width &&
+                    spaceship.x + spaceship.width > powerUp.x &&
+                    spaceship.y < powerUp.y + powerUp.height &&
+                    spaceship.y + spaceship.height > powerUp.y) {
+                    powerUp.action();
+                    powerUps.splice(index, 1);
+                }
+            });
+        }
+
+        // Enemy and laser collision detection
+        function detectLaserCollisions() {
+            lasers.forEach((laser, laserIndex) => {
+                enemies.forEach((enemy, enemyIndex) => {
+                    if (laser.x < enemy.x + enemy.width &&
+                        laser.x + 5 > enemy.x &&
+                        laser.y < enemy.y + enemy.height &&
+                        laser.y + 5 > enemy.y) {
+                        enemies.splice(enemyIndex, 1);
+                        lasers.splice(laserIndex, 1);
+                        score += 10;
+                        explosionSound.play();
+                    }
+                });
+                asteroids.forEach((asteroid, asteroidIndex) => {
+                    if (laser.x < asteroid.x + asteroid.width &&
+                        laser.x + 5 > asteroid.x &&
+                        laser.y < asteroid.y + asteroid.height &&
+                        laser.y + 5 > asteroid.y) {
+                        asteroids.splice(asteroidIndex, 1);
+                        lasers.splice(laserIndex, 1);
+                        score += 5;
+                        explosionSound.play();
+                    }
+                });
+            });
+        }
+
+        // Enemy collision detection
+        function detectEnemyCollisions() {
+            enemies.forEach((enemy, index) => {
+                if (spaceship.x < enemy.x + enemy.width &&
+                    spaceship.x + spaceship.width > enemy.x &&
+                    spaceship.y < enemy.y + enemy.height &&
+                    spaceship.y + spaceship.height > enemy.y) {
+                    if (!shieldActive) {
+                        health -= 20;
+                        enemies.splice(index, 1);
+                    }
+                }
+            });
+        }
+
+        // Asteroid collision detection
+        function detectAsteroidCollisions() {
+            asteroids.forEach((asteroid, index) => {
+                if (spaceship.x < asteroid.x + asteroid.width &&
+                    spaceship.x + spaceship.width > asteroid.x &&
+                    spaceship.y < asteroid.y + asteroid.height &&
+                    spaceship.y + spaceship.height > asteroid.y) {
+                    if (!shieldActive) {
+                        health -= 30;
+                        asteroids.splice(index, 1);
+                    }
+                }
+            });
+        }
+
+        // Level up
+        function increaseLevel() {
+            if (score >= level * 100) {
+                level++;
+                showMessage(`Level Up!`);
+            }
+        }
+
+        // Game restart
+        function restartGame() {
+            score = 0;
+            health = 100;
+            level = 1;
+            enemies = [];
+            asteroids = [];
+            powerUps = [];
+            lasers = [];
+            spaceship.x = canvas.width / 2 - 25;
+            spaceship.y = canvas.height - 100;
+            gameOver = false;
+            document.getElementById('restart-message').style.display = 'none';
+            startGame();
+        }
+
+        // Create enemies
+        function createEnemy() {
+            let enemy = { x: Math.random() * canvas.width, y: -50, width: 50, height: 50 };
+            enemies.push(enemy);
+        }
+
+        // Create asteroids
+        function createAsteroid() {
+            let asteroid = { x: Math.random() * canvas.width, y: -50, width: 40, height: 40 };
+            asteroids.push(asteroid);
+        }
+
+        // Create power-ups
+        function createPowerUp() {
+            let randomPowerUp = Math.random();
+            let powerUp;
+            if (randomPowerUp < 0.2) {
+                powerUp = { x: Math.random() * canvas.width, y: -50, width: 40, height: 40, image: healthUpImg, action: () => { health += 20; showMessage('Health Up!'); } };
+            } else if (randomPowerUp < 0.4) {
+                powerUp = { x: Math.random() * canvas.width, y: -50, width: 40, height: 40, image: speedUpImg, action: () => { spaceship.speed += 2; showMessage('Speed Boost!'); } };
+            } else if (randomPowerUp < 0.6) {
+                powerUp = { x: Math.random() * canvas.width, y: -50, width: 40, height: 40, image: doublePointsImg, action: () => { showMessage('Double Points!'); } };
+            }
+            if (powerUp) powerUps.push(powerUp);
+        }
+
+        // Game loop
+        function gameLoop() {
+            if (health <= 0) {
+                showMessage('Game Over!');
+                document.getElementById('restart-message').style.display = 'block';
+                return;
+            }
+
+            // Level-up
+            increaseLevel();
+
+            // Move everything
+            moveSpaceship();
+            moveLasers();
+            moveEnemies();
+            moveAsteroids();
+            movePowerUps();
+
+            // Collision detection
+            detectLaserCollisions();
+            detectEnemyCollisions();
+            detectAsteroidCollisions();
+            detectPowerUpCollisions();
+
+            // Draw everything
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height);
+            drawSpaceship();
+            drawLasers();
+            drawEnemies();
+            drawAsteroids();
+            drawPowerUps();
+            drawUI();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game
+        function startGame() {
+            gameInterval = setInterval(() => createEnemy(), 2000);
+            setInterval(() => createAsteroid(), 3000);
+            setInterval(() => createPowerUp(), 4000);
+            gameLoop();
+        }
+
+        // Key controls
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') spaceship.dx = -spaceship.speed;
+            if (e.key === 'ArrowRight') spaceship.dx = spaceship.speed;
+            if (e.key === ' ') lasers.push({ x: spaceship.x + spaceship.width / 2, y: spaceship.y, width: 5, height: 10 });
+            if (e.key === 'r' || e.key === 'R') restartGame(); // Restart game on 'R' press
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') spaceship.dx = 0;
+        });
+
+        startGame();
+    </script>
+</body>
+</html>
